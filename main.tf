@@ -1,5 +1,5 @@
 resource "proxmox_virtual_environment_container" "ubuntu_container" {
-  #count = 3
+  count = 3
   description = "Managed by Terraform"
 
   node_name = "proxmox1"
@@ -40,8 +40,8 @@ resource "proxmox_virtual_environment_container" "ubuntu_container" {
 
 
   operating_system {
-    #template_file_id = "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst"
-    template_file_id = "local-lvm:base-127"
+    template_file_id = "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst"
+    #template_file_id = "local-lvm:base-127"
     type             = "ubuntu"
   }
 
@@ -89,24 +89,24 @@ output "ubuntu_container_public_key" {
   value = tls_private_key.ubuntu_container_key.public_key_openssh
 }
 
-# 1. Network: caddy_network
-resource "docker_network" "caddy_network" {
-  name = "caddy_network"
-}
+# # 1. Network: caddy_network
+# resource "docker_network" "caddy_network" {
+#   name = "caddy_network"
+# }
 
-# 2. Volumes: Used for Caddy configuration and data persistence
-resource "docker_volume" "caddy_data" {
-  name = "caddy_data"
-}
+# # 2. Volumes: Used for Caddy configuration and data persistence
+# resource "docker_volume" "caddy_data" {
+#   name = "caddy_data"
+# }
 
-resource "docker_volume" "caddy_config" {
-  name = "caddy_config"
-}
+# resource "docker_volume" "caddy_config" {
+#   name = "caddy_config"
+# }
 
-# 3. Volume: Placeholder for PostgreSQL Data (Required if using a local DB)
-resource "docker_volume" "postgres_data" {
-  name = "postgres_data"
-}
+# # 3. Volume: Placeholder for PostgreSQL Data (Required if using a local DB)
+# resource "docker_volume" "postgres_data" {
+#   name = "postgres_data"
+# }
 
 
   # mount_point {
