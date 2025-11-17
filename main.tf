@@ -31,6 +31,9 @@ resource "proxmox_virtual_environment_container" "ubuntu_container" {
 
   network_interface {
     name = "veth0"
+    bridge  = "vmbr0"  # **CRITICAL:** Use the bridge connected to your physical NIC
+    vlan_id =  20
+  
   }
 
   disk {
