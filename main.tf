@@ -1,20 +1,61 @@
-resource "proxmox_virtual_environment_container" "ubuntu_container" {
-  count = 3
-  description = "Managed by Terraform"
+# --- 2. THE VM RESOURCE BLOCK ---
+resource "proxmox_virtual_environment_vm" "ubuntu_vm" {
+  # Create 2 VMs instead of 3
+  count = 2
+  description = "Managed by Terraform for Docker (VM Test)"
 
-  node_name = "proxmox1"
-# Calculate vm_id: 501 + index (0, 1, 2) = 501, 502, 503
-  vm_id       = 601 + count.index
-
-  # newer linux distributions require unprivileged user namespaces
-  unprivileged = true
-  features {
-    nesting = true
+  clone {
+    vm_id = 9000
   }
 
-  initialization {
-    hostname = "ubuntu-${501 + count.index}"
+  node_name = "proxmox1"
+  # Calculate vm_id: 601 + index (0, 1) = 601, 602
+  vm_id     = 601 + count.index
+  
+  # Dynamic naming convention
+  name = "ubuntu-vm-${601 + count.index}"
+  tags = ["docker-test", "ansible-target"]
 
+  # Enable QEMU Guest Agent for proper shutdown and management
+  agent {
+    enabled = true
+  }
+  stop_on_destroy = true
+
+  startup {
+    order    = "3"
+    up_delay = "60"
+    down_delay = "60"
+  }
+
+  cpu {
+    cores  = 2
+    type   = "host" # Use 'host' for best performance unless compatibility is needed
+  }
+
+  memory {
+    dedicated = 2048 # 2GB RAM
+    floating  = 2048 
+  }
+
+  # Inside the resource "proxmox_virtual_environment_vm" "ubuntu_vm" block...
+  disk {
+    datastore_id = "local-lvm"
+    # IMPORTANT: Reference the new download resource name here
+    interface    = "scsi0"
+    size         = 16
+  }
+
+  # --- Network Interface ---
+  network_device {
+    bridge  = "vmbr0" # **CRITICAL:** Use your management bridge
+    vlan_id = 20
+    model   = "virtio" # Recommended model for performance
+  }
+
+  # --- Initialization (Cloud-Init) ---
+  initialization {
+    # DHCP from your network is typically the easiest setup
     ip_config {
       ipv4 {
         address = "dhcp"
@@ -22,116 +63,45 @@ resource "proxmox_virtual_environment_container" "ubuntu_container" {
     }
 
     user_account {
-      keys = [
-        trimspace(tls_private_key.ubuntu_container_key.public_key_openssh)
-      ]
-      password = random_password.ubuntu_container_password.result
+      # Use the user 'robadmin' and inject the SSH key and password
+      keys     = [trimspace(tls_private_key.ubuntu_vm_key.public_key_openssh)]
+      password = random_password.ubuntu_vm_password.result
+      username = "robadmin" # This sets up the default user for Ansible access
     }
   }
 
-  network_interface {
-    name = "veth0"
-    bridge  = "vmbr0"  # **CRITICAL:** Use the bridge connected to your physical NIC
-    vlan_id =  20
-  
-  }
-
-  disk {
-    datastore_id = "local-lvm"
-    size         = 4
-  }
-
-
+  # Operating system type is only required if not using a cloud image template
   operating_system {
-    template_file_id = "local:vztmpl/ubuntu-22.04-standard_22.04-1_amd64.tar.zst"
-    #template_file_id = "local-lvm:base-127"
-    type             = "ubuntu"
+    type = "l26" # Linux 2.6+ kernel
   }
 
-
-
-
-  mount_point {
-    # volume mount, a new volume will be created by PVE
-    volume = "local-lvm"
-    size   = "10G"
-    path   = "/mnt/volume"
-  }
-
-  startup {
-    order      = "3"
-    up_delay   = "60"
-    down_delay = "60"
-  }
-  
+  # Include serial device for console access
+  serial_device {}
 }
 
-
-resource "random_password" "ubuntu_container_password" {
-  length           = 16
+# --- 3. PASSWORD AND KEY MANAGEMENT ---
+resource "random_password" "ubuntu_vm_password" {
+  length          = 16
   override_special = "_%@"
-  special          = true
+  special         = true
 }
 
-resource "tls_private_key" "ubuntu_container_key" {
+resource "tls_private_key" "ubuntu_vm_key" {
   algorithm = "RSA"
   rsa_bits  = 2048
 }
 
-output "ubuntu_container_password" {
-  value     = random_password.ubuntu_container_password.result
+# --- 4. OUTPUTS ---
+output "ubuntu_vm_password" {
+  value     = random_password.ubuntu_vm_password.result
   sensitive = true
 }
 
-output "ubuntu_container_private_key" {
-  value     = tls_private_key.ubuntu_container_key.private_key_pem
+output "ubuntu_vm_private_key" {
+  value     = tls_private_key.ubuntu_vm_key.private_key_pem
   sensitive = true
 }
 
-output "ubuntu_container_public_key" {
-  value = tls_private_key.ubuntu_container_key.public_key_openssh
+output "ubuntu_vm_public_key" {
+  value = tls_private_key.ubuntu_vm_key.public_key_openssh
 }
-
-# # 1. Network: caddy_network
-# resource "docker_network" "caddy_network" {
-#   name = "caddy_network"
-# }
-
-# # 2. Volumes: Used for Caddy configuration and data persistence
-# resource "docker_volume" "caddy_data" {
-#   name = "caddy_data"
-# }
-
-# resource "docker_volume" "caddy_config" {
-#   name = "caddy_config"
-# }
-
-# # 3. Volume: Placeholder for PostgreSQL Data (Required if using a local DB)
-# resource "docker_volume" "postgres_data" {
-#   name = "postgres_data"
-# }
-
-
-  # mount_point {
-  #   # bind mount, *requires* root@pam authentication
-  #   volume = "/mnt/bindmounts/shared"
-  #   path   = "/mnt/shared"
-  # }
-
-
-  # operating_system {
-  #   template_file_id = proxmox_virtual_environment_download_file.ubuntu_2504_lxc_img.id
-  #   # Or you can use a volume ID, as obtained from a "pvesm list <storage>"
-  #   # template_file_id = "local:vztmpl/jammy-server-cloudimg-amd64.tar.gz"
-  #   type             = "ubuntu"
-  # }
-    # **CRITICAL FIX:** Directly reference the local template volume ID.
-  # Assuming the stable Ubuntu 22.04 template is on 'local' storage.
-
-
-# resource "proxmox_virtual_environment_download_file" "ubuntu_2504_lxc_img" {
-#   content_type = "vztmpl"
-#   datastore_id = "local"
-#   node_name    = "proxmox1"
-#   url          = "https://mirrors.servercentral.com/ubuntu-cloud-images/releases/25.04/release/ubuntu-25.04-server-cloudimg-amd64-root.tar.xz"
-# }
